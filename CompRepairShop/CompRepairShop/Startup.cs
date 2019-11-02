@@ -12,6 +12,11 @@ using CompRepairShop.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Identity.UI.Services;
+using CompRepairShop.Services;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace CompRepairShop
 {
@@ -30,11 +35,64 @@ namespace CompRepairShop
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(
                     Configuration.GetConnectionString("DefaultConnection")));
-            services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
-                .AddEntityFrameworkStores<ApplicationDbContext>();
+            //services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
+            //    .AddEntityFrameworkStores<ApplicationDbContext>();
+
+            services.AddDefaultIdentity<IdentityUser>(config =>
+            {
+                config.SignIn.RequireConfirmedEmail = true;
+                config.Tokens.ProviderMap.Add("CustomEmailConfirmation",
+                    new TokenProviderDescriptor(
+                        typeof(CustomEmailConfirmationTokenProvider<IdentityUser>)));
+                config.Tokens.EmailConfirmationTokenProvider = "CustomEmailConfirmation";
+            }).AddEntityFrameworkStores<ApplicationDbContext>();
+
+            services.AddTransient<CustomEmailConfirmationTokenProvider<IdentityUser>>();
+
             services.AddControllersWithViews();
+
+
+            services.ConfigureApplicationCookie(o => {
+                o.ExpireTimeSpan = TimeSpan.FromDays(5);
+                o.SlidingExpiration = true;
+            });
+
+
+            services.Configure<DataProtectionTokenProviderOptions>(o =>
+                o.TokenLifespan = TimeSpan.FromHours(3));
+
+            // requires
+            // using Microsoft.AspNetCore.Identity.UI.Services;
+            // using WebPWrecover.Services;
+            services.AddTransient<IEmailSender, EmailSender>();
+            services.Configure<AuthMessageSenderOptions>(Configuration);
+
+
             services.AddRazorPages();
         }
+
+
+
+        public class CustomEmailConfirmationTokenProvider<TUser>
+                                       : DataProtectorTokenProvider<TUser> where TUser : class
+        {
+            public CustomEmailConfirmationTokenProvider(IDataProtectionProvider dataProtectionProvider,
+                IOptions<EmailConfirmationTokenProviderOptions> options,
+                ILogger<DataProtectorTokenProvider<TUser>> logger)
+                                                  : base(dataProtectionProvider, options, logger)
+            {
+
+            }
+        }
+        public class EmailConfirmationTokenProviderOptions : DataProtectionTokenProviderOptions
+        {
+            public EmailConfirmationTokenProviderOptions()
+            {
+                Name = "EmailDataProtectorTokenProvider";
+                TokenLifespan = TimeSpan.FromHours(4);
+            }
+        }
+
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
